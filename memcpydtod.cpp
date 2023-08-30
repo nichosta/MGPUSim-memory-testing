@@ -24,10 +24,13 @@ int main() {
     default_random_engine eng(dev());
     uniform_real_distribution<> dis(FLOAT_MIN, FLOAT_MAX);
 
-    // allocate memory for warmup float transfers (a destination on the device, and a source and a destination on the host)
-    float* warmupDeviceMem;
-    hipError_t err = hipMalloc((void**)&warmupDeviceMem, sizeof(float)*WARMUP_FLOATS);
-    handleHipError(err, "warmup device malloc");
+    // allocate memory for warmup float transfers
+    float* warmupDeviceFirstMem;
+    hipError_t err = hipMalloc((void**)&warmupDeviceFirstMem, sizeof(float)*WARMUP_FLOATS);
+    handleHipError(err, "warmup device first malloc");
+    float* warmupDeviceSecondMem;
+    err = hipMalloc((void**)&warmupDeviceSecondMem, sizeof(float)*WARMUP_FLOATS);
+    handleHipError(err, "warmup device second malloc");
     float* warmupHostSourceMem;
     err = hipHostMalloc((void**)&warmupHostSourceMem, sizeof(float)*WARMUP_FLOATS);
     handleHipError(err, "warmup host source malloc");
@@ -41,9 +44,11 @@ int main() {
     }
 
     // warmup transfers
-    err = hipMemcpyHtoD(warmupDeviceMem, warmupHostSourceMem, sizeof(float)*WARMUP_FLOATS);
+    err = hipMemcpyHtoD(warmupDeviceFirstMem, warmupHostSourceMem, sizeof(float)*WARMUP_FLOATS);
     handleHipError(err, "warmup HtD transfer");
-    err = hipMemcpyDtoH(warmupHostDestMem, warmupDeviceMem, sizeof(float)*WARMUP_FLOATS);
+    err = hipMemcpyDtoD(warmupDeviceSecondMem, warmupDeviceFirstMem, sizeof(float)*WARMUP_FLOATS);
+    handleHipError(err, "warmup DtD transfer");
+    err = hipMemcpyDtoH(warmupHostDestMem, warmupDeviceSecondMem, sizeof(float)*WARMUP_FLOATS);
     handleHipError(err, "warmup DtH transfer");
 
     // compare (ensure transfer works)
@@ -55,14 +60,16 @@ int main() {
     }
 
     // free memory
-    err = hipFree(warmupDeviceMem);
-    handleHipError(err, "warmup device data free");
+    err = hipFree(warmupDeviceFirstMem);
+    handleHipError(err, "warmup device first data free");
+    err = hipFree(warmupDeviceSecondMem);
+    handleHipError(err, "warmup device second data free");
     err = hipHostFree(warmupHostSourceMem);
     handleHipError(err, "warmup host source data free");
     err = hipHostFree(warmupHostDestMem);
     handleHipError(err, "warmup host dest data free");
 
-    // main D2H / H2D testing
+    // main D2D testing
 
     unsigned int float_count = 48;
 
@@ -70,9 +77,12 @@ int main() {
 
         cout << "current cycle: " << float_count << " floats" << endl;
         // allocate memory for testing
-        float* deviceMem;
-        err = hipMalloc((void**)&deviceMem, sizeof(float)*float_count);
-        handleHipError(err, "device mem malloc");
+        float* deviceFirstMem;
+        err = hipMalloc((void**)&deviceFirstMem, sizeof(float)*float_count);
+        handleHipError(err, "device first mem malloc");
+        float* deviceSecondMem;
+        err = hipMalloc((void**)&deviceSecondMem, sizeof(float)*float_count);
+        handleHipError(err, "device second mem malloc");
         float* hostSourceMem;
         err = hipHostMalloc((void**)&hostSourceMem, sizeof(float)*float_count);
         handleHipError(err, "host source mem malloc");
@@ -85,53 +95,41 @@ int main() {
             hostSourceMem[i] = dis(eng);
         }
 
-        // HOST to DEVICE test
+        // DEVICE to DEVICE test
 
-        // hipEvent setup
-        hipEvent_t startHtD, stopHtD;
-        hipEventCreate(&startHtD);
-        hipEventCreate(&stopHtD);
-        float durationHtD;
-
-        // get before time
-        hipEventRecord(startHtD, NULL);
-
-        // primary transfer
-        err = hipMemcpyHtoD(deviceMem, hostSourceMem, sizeof(float)*float_count);
+        // host to device transfer
+        err = hipMemcpyHtoD(deviceFirstMem, hostSourceMem, sizeof(float)*float_count);
         handleHipError(err, "host to device transfer");
 
-        // get after time
-        hipEventRecord(stopHtD, NULL);
-        hipEventSynchronize(stopHtD);
-        hipEventElapsedTime(&durationHtD, startHtD, stopHtD);
-
-        cout << "host to device time taken: " << durationHtD << "ms" << endl;
-
-        // DEVICE to HOST test
-
-        hipEvent_t startDtH, stopDtH;
-        hipEventCreate(&startDtH);
-        hipEventCreate(&stopDtH);
-        float durationDtH;
+        // hipEvent setup
+        hipEvent_t startDtD, stopDtD;
+        hipEventCreate(&startDtD);
+        hipEventCreate(&stopDtD);
+        float durationDtD;
 
         // get before time
-        hipEventRecord(startDtH, NULL);
+        hipEventRecord(startDtD, NULL);
 
         // primary transfer
-        err = hipMemcpyDtoH(hostDestMem, deviceMem, sizeof(float)*float_count);
-        handleHipError(err, "device to host transfer");
+        err = hipMemcpyDtoD(deviceSecondMem, deviceFirstMem, sizeof(float)*float_count);
+        handleHipError(err, "device to device transfer");
 
         // get after time
-        hipEventRecord(stopDtH, NULL);
-        hipEventSynchronize(stopDtH);
-        hipEventElapsedTime(&durationDtH, startDtH, stopDtH);
+        hipEventRecord(stopDtD, NULL);
+        hipEventSynchronize(stopDtD);
+        hipEventElapsedTime(&durationDtD, startDtD, stopDtD);
 
-        cout << "device to host time taken: " << durationDtH << "ms" << endl;
+        cout << "device to device time taken: " << durationDtD << "ms" << endl;
 
+        // device to host transfer
+        err = hipMemcpyDtoH(hostDestMem, deviceSecondMem, sizeof(float)*float_count);
+        handleHipError(err, "device to host transfer");
 
         // free memory
-        err = hipFree(deviceMem);
-        handleHipError(err, "free device memory");
+        err = hipFree(deviceFirstMem);
+        handleHipError(err, "free first device memory");
+        err = hipFree(deviceSecondMem);
+        handleHipError(err, "free second device memory");
         err = hipHostFree(hostSourceMem);
         handleHipError(err, "free host source memory");
         err = hipHostFree(hostDestMem);
