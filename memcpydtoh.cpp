@@ -3,6 +3,7 @@
 #include <iostream>
 #include <random>
 #include <hip/hip_runtime.h>
+// #include <rocm_smi/rocm_smi.h>
 
 using namespace std;
 
@@ -19,6 +20,9 @@ void handleHipError(hipError_t err, const char* sourceName) {
 }
 
 int main() {
+    // rsmi_status_t ret;
+    // ret = rsmi_init(0);
+
     // random float generators
     random_device dev;
     default_random_engine eng(dev());
@@ -39,6 +43,10 @@ int main() {
     for (int i = 0; i < WARMUP_FLOATS; i++) {
         warmupHostSourceMem[i] = dis(eng);
     }
+
+    rsmi_pcie_bandwidth_t* bandwidth;
+    ret = rsmi_dev_pci_bandwidth_get(0, bandwidth);
+    cout << bandwidth->transfer_rate.current << endl;
 
     // warmup transfers
     err = hipMemcpyHtoD(warmupDeviceMem, warmupHostSourceMem, sizeof(float)*WARMUP_FLOATS);
