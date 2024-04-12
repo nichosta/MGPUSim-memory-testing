@@ -48,30 +48,30 @@ func (b *Benchmark) SetUnifiedMemory() {
 func (b *Benchmark) Run() {
 	b.driver.SelectGPU(b.context, b.gpu)
 
-	// for {
-	b.data = make([]byte, b.ByteSize)
-	b.retData = make([]byte, b.ByteSize)
-	for i := uint64(0); i < b.ByteSize; i++ {
-		b.data[i] = byte(rand.Int())
+	for b.ByteSize <= 805306368 {
+		b.data = make([]byte, b.ByteSize)
+		b.retData = make([]byte, b.ByteSize)
+		for i := uint64(0); i < b.ByteSize; i++ {
+			b.data[i] = byte(rand.Int())
+		}
+
+		gpuData := b.driver.AllocateMemory(b.context, b.ByteSize)
+
+		startTimeEngine := b.driver.Engine.CurrentTime()
+
+		b.driver.MemCopyH2D(b.context, gpuData, b.data)
+
+		fmt.Printf("engine time for %d byte size H2D: %f \n", b.ByteSize, (b.driver.Engine.CurrentTime()-startTimeEngine)*1000) //ms
+
+		startTimeEngine2 := b.driver.Engine.CurrentTime()
+		b.driver.MemCopyD2H(b.context, b.retData, gpuData)
+
+		fmt.Printf("engine time for %d byte size D2H: %f \n", b.ByteSize, (b.driver.Engine.CurrentTime()-startTimeEngine2)*1000)
+
+		b.driver.FreeMemory(b.context, gpuData)
+
+		b.ByteSize *= 2
 	}
-
-	gpuData := b.driver.AllocateMemory(b.context, b.ByteSize)
-
-	startTimeEngine := b.driver.Engine.CurrentTime()
-
-	b.driver.MemCopyH2D(b.context, gpuData, b.data)
-
-	fmt.Printf("engine time for %d byte size H2D: %f \n", b.ByteSize, b.driver.Engine.CurrentTime()-startTimeEngine)
-
-	// startTimeEngine2 := b.driver.Engine.CurrentTime()
-	b.driver.MemCopyD2H(b.context, b.retData, gpuData)
-
-	// fmt.Printf("engine time for %d byte size D2H: %f \n", b.ByteSize, b.driver.Engine.CurrentTime()-startTimeEngine2)
-
-	b.driver.FreeMemory(b.context, gpuData)
-
-	// b.ByteSize *= 2
-	// }
 }
 
 // Verify verifies
@@ -91,7 +91,7 @@ func main() {
 	runner := new(runner.Runner).ParseFlag().Init()
 
 	benchmark := NewBenchmark(runner.Driver())
-	benchmark.ByteSize = 1048576 * 2 //  2 MiB
+	benchmark.ByteSize = 192 //6291456
 
 	runner.AddBenchmark(benchmark)
 
